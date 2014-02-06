@@ -1,0 +1,202 @@
+<!--
+Copyright (C) 2014 Google Inc. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<!DOCTYPE html>
+<html>
+  <head>
+    <style type="text/css">
+	  body {
+	    overflow: hidden;
+        margin: 0;
+	  }
+      #surface{
+	    height:720px;
+	    width:1280px;
+	    border:4px solid silver;
+	    background-color: #0000aa;
+        box-sizing: border-box;
+	}
+    </style>
+    <title>PongCast</title>
+  </head>
+  <body>
+    <script type="text/javascript" src="//www.gstatic.com/cast/sdk/libs/receiver/2.0.0/cast_receiver.js"></script>
+    <script type="text/javascript">
+        var RADIUS = 2;
+        var PADDLE_WIDTH = 50;
+        var PADDLE_HEIGHT = 5;
+        var PADDLE_MARGIN = 2;
+        function draw() {
+            ctx.clearRect(0,0,window.canvas.width, window.canvas.height);
+            drawBall(window.game.ball, window.game.ball);
+            drawPaddle(1, window.game.player1);
+            drawPaddle(2, window.game.player2);
+        }
+
+        function drawBall(ball) {
+            var ctx = window.ctx;
+            ctx.beginPath();
+			ctx.arc(ball.x, ball.y, RADIUS, 0, Math.PI*2, true);
+			ctx.closePath();
+            ctx.fillStyle = "white";
+			ctx.fill();
+        }
+        function drawPaddle(player, pos) {
+            var ctx = window.ctx;
+            var top;
+            if (player == 1)
+                top = window.canvas.height - PADDLE_HEIGHT - PADDLE_MARGIN;
+            else
+                top = PADDLE_MARGIN;
+
+            ctx.rect(pos-PADDLE_WIDTH/2, top, PADDLE_WIDTH, PADDLE_HEIGHT);
+
+            ctx.fillStyle = "white";
+			ctx.fill();
+        }
+
+        function hitPaddle(player) {
+            if(player == 1) {
+                var top = window.canvas.height - PADDLE_HEIGHT - PADDLE_MARGIN - RADIUS;
+                return (game.ball.y>=top) && (Math.abs(game.player1-game.ball.x)<=PADDLE_WIDTH/2);
+            } else {
+                var bot = PADDLE_HEIGHT + PADDLE_MARGIN + RADIUS;
+                return (game.ball.y<=bot) && (Math.abs(game.player2-game.ball.x)<=PADDLE_WIDTH/2);
+            }
+        }
+
+        function updateComputer() {
+            if (game.ball.x > game.player2+PADDLE_WIDTH/2) {
+                game.player2 += 5
+            } else if (game.ball.x < game.player2-PADDLE_WIDTH/2) {
+                game.player2 -= 5
+            }
+            if (Math.random() > 0.75) {
+                if (game.ball.x > game.player2) {
+                    game.player2 += 2
+                } else if (game.ball.x < game.player2) {
+                    game.player2 -= 2
+                }
+            }
+        }
+
+        function updateState() {
+            // Bouncing off sides
+            if ((game.ball.x-RADIUS) <= 0 || (game.ball.x+RADIUS)>=canvas.width) {
+                game.ball.dx = -game.ball.dx;
+            }
+
+            game.ball.x += game.ball.dx;
+            game.ball.y += game.ball.dy;
+
+            // Hitting paddles
+            if (game.ball.dy>0 && hitPaddle(1)) {
+                game.ball.dy = -game.ball.dy;
+                game.ball.dx = 6 * ((game.ball.x-game.player1)/PADDLE_WIDTH);
+            }
+            if (game.ball.dy<0 && hitPaddle(2)) {
+                game.ball.dy = -game.ball.dy;
+                game.ball.dx = 6 * ((game.ball.x-game.player2)/PADDLE_WIDTH);
+            }
+
+            // End condition
+            if ((game.ball.y-RADIUS <0) ||(game.ball.y+RADIUS>canvas.height)) {
+                stopGame();
+            }
+
+            updateComputer();
+
+            draw();
+        }
+
+        function stopGame() {
+            if (window.game_interval) {
+                clearInterval(window.game_interval);
+            }
+        }
+
+        function initGame() {
+            stopGame();
+            window.game = {
+                ball: {
+                    x:10,
+                    y:10,
+                    dx:1.5,
+                    dy:2,
+                },
+                player1: window.canvas.width/2,
+                player2: window.canvas.width/2
+            }
+            window.game_interval = setInterval(updateState, 100);
+        }
+
+        window.onload = function() {
+            window.canvas = document.getElementById("surface")
+            window.ctx = window.canvas.getContext("2d");
+
+            //cast.receiver.logger.setLevelValue(0);
+            window.castReceiverManager = cast.receiver.CastReceiverManager.getInstance();
+            console.log('Starting Receiver Manager');
+            
+            // handler for the 'ready' event
+            castReceiverManager.onReady = function(event) {
+                console.log('Received Ready event: ' + JSON.stringify(event.data));
+                window.castReceiverManager.setApplicationState("Application status is ready...");
+            };
+            
+            // handler for 'senderconnected' event
+            castReceiverManager.onSenderConnected = function(event) {
+                console.log('Received Sender Connected event: ' + event.data);
+                console.log(window.castReceiverManager.getSender(event.data).userAgent);
+                initGame();
+            };
+            
+            // handler for 'senderdisconnected' event
+            castReceiverManager.onSenderDisconnected = function(event) {
+                console.log('Received Sender Disconnected event: ' + event.data);
+                if (window.castReceiverManager.getSenders().length == 0) {
+                    window.close();
+                }
+            };
+            
+            // handler for 'systemvolumechanged' event
+            castReceiverManager.onSystemVolumeChanged = function(event) {
+                console.log('Received System Volume Changed event: ' + event.data['level'] + ' ' + event.data['muted']);
+            };
+
+            // create a CastMessageBus to handle messages for a custom namespace
+            window.messageBus = window.castReceiverManager.getCastMessageBus('urn:x-cast:net.mspin.cast.pong', cast.receiver.CastMessageBus.MessageType.JSON);
+
+            // handler for the CastMessageBus message event
+            window.messageBus.onMessage = function(event) {
+                //console.log('Message [' + event.senderId + ']: ' + event.data);
+
+                window.game.player1 = Math.round(event.data.x * window.canvas.width);
+//                window.game.player2 = Math.round(event.data.x * window.canvas.width);
+                draw();
+                // inform all senders on the CastMessageBus of the incoming message event
+                // sender message listener will be invoked
+                //window.messageBus.send(event.senderId, event.data);
+            }
+
+            // initialize the CastReceiverManager with an application status message
+            window.castReceiverManager.start({statusText: "Application is starting"});
+            console.log('Receiver Manager started');
+      };
+    </script>
+
+    <canvas id='surface'></canvas>
+  </body>
+</html>
